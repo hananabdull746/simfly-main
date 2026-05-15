@@ -26,7 +26,8 @@ const REQUIRED_PACKAGES = [
   'dotenv',
   'firebase-admin',
   'node-cache',
-  '@google/generative-ai'
+  '@google/generative-ai',
+  'ngrok'
 ];
 
 function ensureDependencies() {
@@ -57,6 +58,8 @@ function ensureDependencies() {
 }
 ensureDependencies();
 
+const ngrok = require('ngrok');
+
 // ============================
 // 2. VERIFY ENV FILES
 // ============================
@@ -70,12 +73,13 @@ if (!fs.existsSync('./serviceAccountKey.json')) {
 }
 
 // ============================
-// 3. GLOBAL STATE FOR WEB
+// 3. GLOBAL STATE
 // ============================
 let globalState = {
   pairingCode: null,
   connectionStatus: 'connecting',
   botPhone: null,
+  ngrokUrl: null,
   logs: []
 };
 
@@ -115,34 +119,27 @@ function askPhoneNumber() {
 }
 
 // ============================
-// 5. WEB SERVER (FRONTEND)
+// 5. WEB SERVER
 // ============================
+let webPort = 0;
+
 function startWebServer() {
-  const server = http.createServer((req, res) => {
-    const url = req.url;
+  return new Promise((resolve) => {
+    const server = http.createServer((req, res) => {
+      if (req.url === '/api/status') {
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+        res.end(JSON.stringify({
+          pairingCode: globalState.pairingCode,
+          status: globalState.connectionStatus,
+          botPhone: globalState.botPhone,
+          ngrokUrl: globalState.ngrokUrl,
+          timestamp: Date.now()
+        }));
+        return;
+      }
 
-    // API: Get status
-    if (url === '/api/status') {
-      res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-      res.end(JSON.stringify({
-        pairingCode: globalState.pairingCode,
-        status: globalState.connectionStatus,
-        botPhone: globalState.botPhone,
-        timestamp: Date.now()
-      }));
-      return;
-    }
-
-    // API: Get logs
-    if (url === '/api/logs') {
-      res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-      res.end(JSON.stringify({ logs: globalState.logs }));
-      return;
-    }
-
-    // Frontend HTML
-    res.writeHead(200, { 'Content-Type': 'text/html' });
-    res.end(`<!DOCTYPE html>
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      res.end(`<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -171,6 +168,15 @@ function startWebServer() {
     .logo { font-size: 60px; margin-bottom: 10px; }
     h1 { color: #25d366; font-size: 28px; margin-bottom: 5px; }
     .subtitle { color: #888; font-size: 14px; margin-bottom: 30px; }
+    .ngrok-box {
+      background: #e7f3ff;
+      border-radius: 12px;
+      padding: 15px;
+      margin: 15px 0;
+      word-break: break-all;
+    }
+    .ngrok-box a { color: #004085; font-weight: 600; text-decoration: none; }
+    .ngrok-box a:hover { text-decoration: underline; }
     .status-box {
       background: #f8f9fa;
       border-radius: 15px;
@@ -182,7 +188,6 @@ function startWebServer() {
     .status-value { font-size: 18px; font-weight: 600; color: #333; }
     .status-value.connected { color: #25d366; }
     .status-value.connecting { color: #f0ad4e; }
-    .status-value.error { color: #d9534f; }
     .pairing-box {
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
       border-radius: 15px;
@@ -237,7 +242,6 @@ function startWebServer() {
       font-size: 12px;
     }
     .hidden { display: none; }
-    .refresh-hint { color: #888; font-size: 12px; margin-top: 10px; }
   </style>
 </head>
 <body>
@@ -245,6 +249,11 @@ function startWebServer() {
     <div class="logo">📱</div>
     <h1>SimFly Pakistan</h1>
     <div class="subtitle">WhatsApp Bot Dashboard</div>
+
+    <div id="ngrokBox" class="ngrok-box hidden">
+      <div style="font-size:12px;color:#666;margin-bottom:8px;">🌐 Public URL (Open anywhere)</div>
+      <a id="ngrokUrl" href="#" target="_blank">-</a>
+    </div>
 
     <div class="status-box">
       <div class="status-label">Connection Status</div>
@@ -260,7 +269,7 @@ function startWebServer() {
       <div id="pairingBox" class="pairing-box hidden">
         <h2>🔑 Your Pairing Code</h2>
         <div class="pairing-code" id="pairingCode">----</div>
-        <div class="refresh-hint">Code refreshes every 60 seconds</div>
+        <div style="opacity:0.8;font-size:12px;margin-top:10px;">Code refreshes every 60 seconds</div>
       </div>
 
       <div class="steps" id="stepsBox">
@@ -301,11 +310,19 @@ function startWebServer() {
     const phoneNumber = document.getElementById('phoneNumber');
     const pairingSection = document.getElementById('pairingSection');
     const connectedSection = document.getElementById('connectedSection');
+    const ngrokBox = document.getElementById('ngrokBox');
+    const ngrokUrl = document.getElementById('ngrokUrl');
 
     async function checkStatus() {
       try {
         const res = await fetch('/api/status');
         const data = await res.json();
+
+        if (data.ngrokUrl) {
+          ngrokUrl.href = data.ngrokUrl;
+          ngrokUrl.textContent = data.ngrokUrl;
+          ngrokBox.classList.remove('hidden');
+        }
 
         if (data.status === 'connected') {
           statusText.textContent = 'Connected';
@@ -325,9 +342,6 @@ function startWebServer() {
             pairingBox.classList.remove('hidden');
             if (pairingCode.textContent !== data.pairingCode) {
               pairingCode.textContent = data.pairingCode;
-              // Flash effect
-              pairingBox.style.animation = 'none';
-              setTimeout(() => pairingBox.style.animation = '', 10);
             }
           }
 
@@ -335,9 +349,6 @@ function startWebServer() {
             phoneNumber.textContent = '+' + data.botPhone;
             phoneBox.classList.remove('hidden');
           }
-        } else {
-          statusText.textContent = 'Error';
-          statusText.className = 'status-value error';
         }
       } catch (e) {
         statusText.textContent = 'Server unreachable';
@@ -350,22 +361,34 @@ function startWebServer() {
   </script>
 </body>
 </html>`);
-  });
+    });
 
-  server.listen(0, '0.0.0.0', () => {
-    const port = server.address().port;
-    console.log('');
-    console.log('🌐 WEB DASHBOARD STARTED');
-    console.log('========================================');
-    console.log('');
-    console.log('📱 Open this URL in your browser:');
-    console.log('');
-    console.log('   http://YOUR_VPS_IP:' + port);
-    console.log('');
-    console.log('   (Replace YOUR_VPS_IP with your server IP)');
-    console.log('');
-    console.log('========================================');
-    console.log('');
+    server.listen(0, '127.0.0.1', async () => {
+      webPort = server.address().port;
+      console.log('');
+      console.log('🌐 Local web server started on port ' + webPort);
+
+      // Start ngrok tunnel
+      try {
+        const url = await ngrok.connect({
+          addr: webPort,
+          authtoken: process.env.NGROK_AUTHTOKEN || undefined
+        });
+        globalState.ngrokUrl = url;
+        console.log('');
+        console.log('🌍 NGROK PUBLIC URL:');
+        console.log('   ' + url);
+        console.log('');
+        console.log('📱 Open this URL on your PHONE or COMPUTER');
+        console.log('   (No firewall config needed!)');
+        console.log('');
+      } catch (err) {
+        console.log('⚠️  Ngrok failed: ' + err.message);
+        console.log('   Public URL not available. Using localhost only.');
+      }
+
+      resolve();
+    });
   });
 }
 
@@ -411,7 +434,7 @@ async function connectBot(phoneNumber) {
       if (update.pairingCode) {
         globalState.pairingCode = update.pairingCode;
         globalState.connectionStatus = 'connecting';
-        addLog('Pairing code received: ' + update.pairingCode);
+        addLog('Pairing code: ' + update.pairingCode);
       }
 
       if (connection === 'close') {
@@ -426,7 +449,7 @@ async function connectBot(phoneNumber) {
         if (shouldReconnect && reconnectAttempts < 10) {
           reconnectAttempts++;
           const delay = Math.min(5000 * reconnectAttempts, 30000);
-          addLog('Connection lost. Reconnecting in ' + delay + 'ms (attempt ' + reconnectAttempts + ')');
+          addLog('Reconnecting in ' + delay + 'ms (attempt ' + reconnectAttempts + ')');
           setTimeout(() => connectBot(phoneNumber), delay);
         } else if (statusCode === DisconnectReason.loggedOut) {
           addLog('Logged out. Delete auth_info_baileys and restart.');
@@ -439,7 +462,7 @@ async function connectBot(phoneNumber) {
         reconnectAttempts = 0;
         globalState.connectionStatus = 'connected';
         globalState.pairingCode = null;
-        addLog('✅ Bot connected successfully!');
+        addLog('✅ Bot connected!');
       }
     });
 
@@ -480,7 +503,7 @@ async function connectBot(phoneNumber) {
 // ============================
 (async () => {
   try {
-    startWebServer();
+    await startWebServer();
 
     const authExists = fs.existsSync('./auth_info_baileys/creds.json');
     let phoneNumber = null;
@@ -502,6 +525,7 @@ async function connectBot(phoneNumber) {
 
 process.on('SIGINT', () => {
   console.log('Shutting down...');
+  ngrok.kill().catch(() => {});
   process.exit(0);
 });
 
