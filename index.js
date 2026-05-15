@@ -11,6 +11,7 @@ const { handleMessage } = require('./src/handler');
 const readline = require('readline');
 const { execSync } = require('child_process');
 const fs = require('fs');
+const http = require('http');
 
 const logger = P({ level: 'info' });
 
@@ -31,7 +32,6 @@ const REQUIRED_PACKAGES = [
 function ensureDependencies() {
   let installed = 0;
   let failed = 0;
-
   for (const pkg of REQUIRED_PACKAGES) {
     try {
       require.resolve(pkg);
@@ -46,18 +46,15 @@ function ensureDependencies() {
       }
     }
   }
-
   if (failed > 0) {
     logger.error(failed + ' package(s) failed. Run: npm install');
     process.exit(1);
   }
-
   if (installed > 0) {
-    logger.info('Dependencies installed. Please restart the bot.');
+    logger.info('Dependencies installed. Please restart.');
     process.exit(0);
   }
 }
-
 ensureDependencies();
 
 // ============================
@@ -67,50 +64,50 @@ if (!fs.existsSync('./.env')) {
   logger.error('.env file not found! Create it from .env.example');
   process.exit(1);
 }
-
 if (!fs.existsSync('./serviceAccountKey.json')) {
-  logger.error('serviceAccountKey.json not found! Add Firebase credentials.');
+  logger.error('serviceAccountKey.json not found!');
   process.exit(1);
 }
 
 // ============================
-// 3. PHONE NUMBER INPUT
+// 3. GLOBAL STATE FOR WEB
+// ============================
+let globalState = {
+  pairingCode: null,
+  connectionStatus: 'connecting',
+  botPhone: null,
+  logs: []
+};
+
+function addLog(msg) {
+  const line = '[' + new Date().toLocaleTimeString() + '] ' + msg;
+  globalState.logs.push(line);
+  if (globalState.logs.length > 50) globalState.logs.shift();
+  console.log(line);
+}
+
+// ============================
+// 4. PHONE NUMBER INPUT
 // ============================
 function askPhoneNumber() {
   return new Promise((resolve) => {
-    const rl = readline.createInterface({
-      input: process.stdin,
-      output: process.stdout
-    });
-
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
     console.log('');
     console.log('========================================');
     console.log('   SimFly Pakistan WhatsApp Bot');
     console.log('========================================');
     console.log('');
     console.log('Enter your WhatsApp bot number');
-    console.log('Format: 923001234567 (country code, no +, no spaces)');
-    console.log('Examples:');
-    console.log('  Pakistan:  923001234567');
-    console.log('  USA:       14155552671');
-    console.log('  UK:        447911123456');
-    console.log('  UAE:       971501234567');
-    console.log('  India:     919876543210');
-    console.log('  Turkey:    905551234567');
+    console.log('Format: 923001234567 (country code, no +)');
+    console.log('Examples: 923001234567 | 14155552671 | 447911123456');
     console.log('');
-
     rl.question('Phone number: ', (input) => {
       rl.close();
       const clean = input.replace(/\D/g, '');
-
       if (clean.length < 10 || clean.length > 15) {
-        console.log('');
-        console.log('❌ Invalid number. Must be 10-15 digits with country code.');
-        console.log('   Example: 923001234567');
+        console.log('❌ Invalid number. Must be 10-15 digits.');
         process.exit(1);
       }
-
-      console.log('');
       console.log('✅ Number accepted: ' + clean);
       resolve(clean);
     });
@@ -118,7 +115,262 @@ function askPhoneNumber() {
 }
 
 // ============================
-// 4. BOT CONNECTION
+// 5. WEB SERVER (FRONTEND)
+// ============================
+function startWebServer() {
+  const server = http.createServer((req, res) => {
+    const url = req.url;
+
+    // API: Get status
+    if (url === '/api/status') {
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+      res.end(JSON.stringify({
+        pairingCode: globalState.pairingCode,
+        status: globalState.connectionStatus,
+        botPhone: globalState.botPhone,
+        timestamp: Date.now()
+      }));
+      return;
+    }
+
+    // API: Get logs
+    if (url === '/api/logs') {
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+      res.end(JSON.stringify({ logs: globalState.logs }));
+      return;
+    }
+
+    // Frontend HTML
+    res.writeHead(200, { 'Content-Type': 'text/html' });
+    res.end(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SimFly Pakistan - Bot Dashboard</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .container {
+      background: white;
+      border-radius: 20px;
+      box-shadow: 0 25px 50px rgba(0,0,0,0.3);
+      max-width: 500px;
+      width: 100%;
+      padding: 40px;
+      text-align: center;
+    }
+    .logo { font-size: 60px; margin-bottom: 10px; }
+    h1 { color: #25d366; font-size: 28px; margin-bottom: 5px; }
+    .subtitle { color: #888; font-size: 14px; margin-bottom: 30px; }
+    .status-box {
+      background: #f8f9fa;
+      border-radius: 15px;
+      padding: 25px;
+      margin: 20px 0;
+      border: 2px solid #e9ecef;
+    }
+    .status-label { font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px; }
+    .status-value { font-size: 18px; font-weight: 600; color: #333; }
+    .status-value.connected { color: #25d366; }
+    .status-value.connecting { color: #f0ad4e; }
+    .status-value.error { color: #d9534f; }
+    .pairing-box {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      border-radius: 15px;
+      padding: 30px;
+      margin: 20px 0;
+      color: white;
+    }
+    .pairing-box h2 { font-size: 16px; margin-bottom: 15px; opacity: 0.9; }
+    .pairing-code {
+      font-size: 42px;
+      font-weight: bold;
+      letter-spacing: 8px;
+      font-family: 'Courier New', monospace;
+      text-shadow: 0 2px 4px rgba(0,0,0,0.2);
+      margin: 15px 0;
+    }
+    .steps {
+      text-align: left;
+      background: #fff3cd;
+      border-radius: 12px;
+      padding: 20px;
+      margin: 20px 0;
+      border-left: 4px solid #ffc107;
+    }
+    .steps h3 { color: #856404; margin-bottom: 12px; font-size: 14px; }
+    .steps ol { margin: 0; padding-left: 20px; }
+    .steps li { margin: 8px 0; color: #856404; font-size: 14px; line-height: 1.5; }
+    .phone-display {
+      background: #e7f3ff;
+      border-radius: 10px;
+      padding: 12px;
+      margin: 15px 0;
+      font-size: 16px;
+      color: #004085;
+      font-weight: 600;
+    }
+    .loader {
+      border: 3px solid #f3f3f3;
+      border-top: 3px solid #667eea;
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      animation: spin 1s linear infinite;
+      margin: 20px auto;
+    }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    .footer {
+      margin-top: 30px;
+      padding-top: 20px;
+      border-top: 1px solid #eee;
+      color: #aaa;
+      font-size: 12px;
+    }
+    .hidden { display: none; }
+    .refresh-hint { color: #888; font-size: 12px; margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="logo">📱</div>
+    <h1>SimFly Pakistan</h1>
+    <div class="subtitle">WhatsApp Bot Dashboard</div>
+
+    <div class="status-box">
+      <div class="status-label">Connection Status</div>
+      <div class="status-value connecting" id="statusText">Connecting...</div>
+    </div>
+
+    <div id="phoneBox" class="phone-display hidden">
+      Bot Number: <span id="phoneNumber">-</span>
+    </div>
+
+    <div id="pairingSection">
+      <div class="loader" id="loader"></div>
+      <div id="pairingBox" class="pairing-box hidden">
+        <h2>🔑 Your Pairing Code</h2>
+        <div class="pairing-code" id="pairingCode">----</div>
+        <div class="refresh-hint">Code refreshes every 60 seconds</div>
+      </div>
+
+      <div class="steps" id="stepsBox">
+        <h3>📲 How to Link Your Device</h3>
+        <ol>
+          <li>Open <b>WhatsApp</b> on your phone</li>
+          <li>Tap <b>Settings</b> (bottom right)</li>
+          <li>Go to <b>Linked Devices</b></li>
+          <li>Tap <b>Link with phone number</b></li>
+          <li>Enter the code above</li>
+        </ol>
+      </div>
+    </div>
+
+    <div id="connectedSection" class="hidden">
+      <div class="status-box">
+        <div class="status-label">Bot Status</div>
+        <div class="status-value connected">🟢 ONLINE</div>
+      </div>
+      <p style="color: #666; margin-top: 15px; font-size: 14px;">
+        Bot is live and handling messages.<br>
+        Admin commands: <code>/menu</code>
+      </p>
+    </div>
+
+    <div class="footer">
+      SimFly Pakistan | Gujranwala, Punjab 🇵🇰<br>
+      Non-PTA iPhone Specialists
+    </div>
+  </div>
+
+  <script>
+    const statusText = document.getElementById('statusText');
+    const pairingCode = document.getElementById('pairingCode');
+    const pairingBox = document.getElementById('pairingBox');
+    const loader = document.getElementById('loader');
+    const phoneBox = document.getElementById('phoneBox');
+    const phoneNumber = document.getElementById('phoneNumber');
+    const pairingSection = document.getElementById('pairingSection');
+    const connectedSection = document.getElementById('connectedSection');
+
+    async function checkStatus() {
+      try {
+        const res = await fetch('/api/status');
+        const data = await res.json();
+
+        if (data.status === 'connected') {
+          statusText.textContent = 'Connected';
+          statusText.className = 'status-value connected';
+          pairingSection.classList.add('hidden');
+          connectedSection.classList.remove('hidden');
+          if (data.botPhone) {
+            phoneNumber.textContent = '+' + data.botPhone;
+            phoneBox.classList.remove('hidden');
+          }
+        } else if (data.status === 'connecting') {
+          statusText.textContent = 'Waiting for pairing code...';
+          statusText.className = 'status-value connecting';
+
+          if (data.pairingCode) {
+            loader.classList.add('hidden');
+            pairingBox.classList.remove('hidden');
+            if (pairingCode.textContent !== data.pairingCode) {
+              pairingCode.textContent = data.pairingCode;
+              // Flash effect
+              pairingBox.style.animation = 'none';
+              setTimeout(() => pairingBox.style.animation = '', 10);
+            }
+          }
+
+          if (data.botPhone) {
+            phoneNumber.textContent = '+' + data.botPhone;
+            phoneBox.classList.remove('hidden');
+          }
+        } else {
+          statusText.textContent = 'Error';
+          statusText.className = 'status-value error';
+        }
+      } catch (e) {
+        statusText.textContent = 'Server unreachable';
+        statusText.className = 'status-value error';
+      }
+    }
+
+    checkStatus();
+    setInterval(checkStatus, 2000);
+  </script>
+</body>
+</html>`);
+  });
+
+  server.listen(0, '0.0.0.0', () => {
+    const port = server.address().port;
+    console.log('');
+    console.log('🌐 WEB DASHBOARD STARTED');
+    console.log('========================================');
+    console.log('');
+    console.log('📱 Open this URL in your browser:');
+    console.log('');
+    console.log('   http://YOUR_VPS_IP:' + port);
+    console.log('');
+    console.log('   (Replace YOUR_VPS_IP with your server IP)');
+    console.log('');
+    console.log('========================================');
+    console.log('');
+  });
+}
+
+// ============================
+// 6. BOT CONNECTION
 // ============================
 let sock = null;
 let reconnectAttempts = 0;
@@ -146,6 +398,7 @@ async function connectBot(phoneNumber) {
     if (phoneNumber && !hasSession) {
       sockConfig.pairingCode = true;
       sockConfig.phoneNumber = phoneNumber;
+      globalState.botPhone = phoneNumber;
     }
 
     sock = makeWASocket(sockConfig);
@@ -155,29 +408,15 @@ async function connectBot(phoneNumber) {
     sock.ev.on('connection.update', async (update) => {
       const { connection, lastDisconnect } = update;
 
-      // Show pairing code INSTANTLY when available
       if (update.pairingCode) {
-        console.log('');
-        console.log('╔════════════════════════════════════════╗');
-        console.log('║         🔑 YOUR PAIRING CODE           ║');
-        console.log('╠════════════════════════════════════════╣');
-        console.log('║                                        ║');
-        console.log('║           ' + update.pairingCode + '             ║');
-        console.log('║                                        ║');
-        console.log('╚════════════════════════════════════════╝');
-        console.log('');
-        console.log('📲 How to link your device:');
-        console.log('   1. Open WhatsApp on your phone');
-        console.log('   2. Tap Settings (bottom right)');
-        console.log('   3. Go to Linked Devices');
-        console.log('   4. Tap "Link with phone number"');
-        console.log('   5. Enter the code above ☝️');
-        console.log('');
-        console.log('⏳ Waiting for you to enter the code...');
-        console.log('');
+        globalState.pairingCode = update.pairingCode;
+        globalState.connectionStatus = 'connecting';
+        addLog('Pairing code received: ' + update.pairingCode);
       }
 
       if (connection === 'close') {
+        globalState.connectionStatus = 'error';
+        globalState.pairingCode = null;
         const statusCode = (lastDisconnect && lastDisconnect.error instanceof Boom) 
           ? lastDisconnect.error.output.statusCode 
           : null;
@@ -187,37 +426,25 @@ async function connectBot(phoneNumber) {
         if (shouldReconnect && reconnectAttempts < 10) {
           reconnectAttempts++;
           const delay = Math.min(5000 * reconnectAttempts, 30000);
-          console.log('');
-          console.log('🔌 Connection lost. Reconnecting in ' + delay + 'ms...');
-          console.log('   (attempt ' + reconnectAttempts + '/10)');
+          addLog('Connection lost. Reconnecting in ' + delay + 'ms (attempt ' + reconnectAttempts + ')');
           setTimeout(() => connectBot(phoneNumber), delay);
         } else if (statusCode === DisconnectReason.loggedOut) {
-          console.log('');
-          console.log('🚫 Logged out.');
-          console.log('   Delete auth_info_baileys folder and restart.');
+          addLog('Logged out. Delete auth_info_baileys and restart.');
           process.exit(1);
         } else {
-          console.log('');
-          console.log('❌ Max reconnection attempts reached.');
+          addLog('Max reconnection attempts reached.');
           process.exit(1);
         }
       } else if (connection === 'open') {
         reconnectAttempts = 0;
-        console.log('');
-        console.log('╔════════════════════════════════════════╗');
-        console.log('║     ✅ SimFly Bot CONNECTED! ✅        ║');
-        console.log('╚════════════════════════════════════════╝');
-        console.log('');
-        console.log('🤖 Bot is live and handling messages');
-        console.log('👨‍💼 Admin commands: /menu');
-        console.log('📍 Business: SimFly Pakistan | Gujranwala');
-        console.log('');
+        globalState.connectionStatus = 'connected';
+        globalState.pairingCode = null;
+        addLog('✅ Bot connected successfully!');
       }
     });
 
     sock.ev.on('messages.upsert', async ({ messages, type }) => {
       if (type !== 'notify') return;
-
       for (const msg of messages) {
         try {
           const jid = msg.key.remoteJid;
@@ -235,29 +462,26 @@ async function connectBot(phoneNumber) {
           try {
             await sock.rejectCall(call.id, call.from);
             await sock.sendMessage(call.from, { 
-              text: '❌ Calls are not supported. Please send a text message for instant support.' 
+              text: 'Calls not supported. Send text message.' 
             });
           } catch (e) {}
         }
       }
     });
 
-    sock.ev.on('error', (err) => {
-      logger.error('SOCKET ERROR', err);
-    });
-
   } catch (err) {
-    console.error('');
-    console.error('❌ FATAL ERROR:', err.message);
+    addLog('FATAL ERROR: ' + err.message);
     setTimeout(() => connectBot(phoneNumber), 10000);
   }
 }
 
 // ============================
-// 5. STARTUP
+// 7. STARTUP
 // ============================
 (async () => {
   try {
+    startWebServer();
+
     const authExists = fs.existsSync('./auth_info_baileys/creds.json');
     let phoneNumber = null;
 
@@ -266,24 +490,21 @@ async function connectBot(phoneNumber) {
     } else {
       console.log('');
       console.log('✅ Existing session found. Connecting...');
-      console.log('   (To re-link, delete auth_info_baileys folder)');
       console.log('');
     }
 
     await connectBot(phoneNumber);
   } catch (err) {
-    console.error('');
-    console.error('❌ STARTUP ERROR:', err);
+    console.error('STARTUP ERROR:', err);
     process.exit(1);
   }
 })();
 
 process.on('SIGINT', () => {
-  console.log('');
-  console.log('🛑 Shutting down SimFly Bot...');
+  console.log('Shutting down...');
   process.exit(0);
 });
 
 process.on('unhandledRejection', (err) => {
-  console.error('❌ UNHANDLED:', err);
+  console.error('UNHANDLED:', err);
 });
