@@ -11,8 +11,10 @@ const { handleMessage } = require('./src/handler');
 const readline = require('readline');
 const { execSync } = require('child_process');
 const fs = require('fs');
+const http = require('http');
+const https = require('https');
 
-const logger = P({ level: 'info', timestamp: () => `,"time":"${new Date().toISOString()}"` });
+const logger = P({ level: 'info' });
 
 // ============================
 // 1. VERIFY & INSTALL DEPS
@@ -35,31 +37,27 @@ function ensureDependencies() {
   for (const pkg of REQUIRED_PACKAGES) {
     try {
       require.resolve(pkg);
-      logger.info(`✓ ${pkg} installed`);
     } catch (e) {
-      logger.info(`⏳ Installing ${pkg}...`);
+      logger.info('Installing ' + pkg + '...');
       try {
-        execSync(`npm install ${pkg}`, { stdio: 'inherit', cwd: __dirname });
+        execSync('npm install ' + pkg, { stdio: 'inherit', cwd: __dirname });
         installed++;
-        logger.info(`✅ ${pkg} installed successfully`);
       } catch (installErr) {
-        logger.error(`❌ Failed to install ${pkg}:`, installErr.message);
+        logger.error('Failed to install ' + pkg);
         failed++;
       }
     }
   }
 
   if (failed > 0) {
-    logger.error(`❌ ${failed} package(s) failed to install. Please run: npm install`);
+    logger.error(failed + ' package(s) failed. Run: npm install');
     process.exit(1);
   }
 
   if (installed > 0) {
-    logger.info(`🔄 Restarting to load newly installed packages...`);
-    process.exit(0); // PM2 will auto-restart if configured, otherwise user re-runs
+    logger.info('Dependencies installed. Please restart the bot.');
+    process.exit(0);
   }
-
-  logger.info('✅ All dependencies verified');
 }
 
 ensureDependencies();
@@ -68,66 +66,131 @@ ensureDependencies();
 // 2. VERIFY ENV FILES
 // ============================
 if (!fs.existsSync('./.env')) {
-  logger.error('❌ .env file not found! Please create it from .env.example');
-  logger.info('   cp .env.example .env && nano .env');
+  logger.error('.env file not found! Create it from .env.example');
   process.exit(1);
 }
 
 if (!fs.existsSync('./serviceAccountKey.json')) {
-  logger.error('❌ serviceAccountKey.json not found! Please add your Firebase credentials.');
+  logger.error('serviceAccountKey.json not found! Add Firebase credentials.');
   process.exit(1);
 }
 
 // ============================
-// 3. PHONE NUMBER INPUT
+// 3. QR CODE WEB SERVER
 // ============================
-const rl = readline.createInterface({
-  input: process.stdin,
-  output: process.stdout
-});
+let qrCodeData = null;
+let serverPort = 0;
 
+function startQRServer() {
+  const server = http.createServer((req, res) => {
+    if (req.url === '/' || req.url === '/qr') {
+      if (qrCodeData) {
+        const qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=' + encodeURIComponent(qrCodeData);
+        res.writeHead(200, { 'Content-Type': 'text/html' });
+        res.end(`
+<!DOCTYPE html>
+<html>
+<head>
+  <title>SimFly Bot - WhatsApp QR Code</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { font-family: Arial, sans-serif; text-align: center; padding: 40px; background: #f0f2f5; }
+    .container { max-width: 500px; margin: 0 auto; background: white; padding: 30px; border-radius: 15px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+    h1 { color: #25d366; margin-bottom: 10px; }
+    h2 { color: #333; font-size: 18px; margin-bottom: 20px; }
+    img { max-width: 100%; border-radius: 10px; margin: 20px 0; }
+    .steps { text-align: left; background: #f8f9fa; padding: 20px; border-radius: 10px; margin-top: 20px; }
+    .steps ol { margin: 0; padding-left: 20px; }
+    .steps li { margin: 10px 0; color: #555; }
+    .pairing { background: #e7f3ff; padding: 15px; border-radius: 10px; margin: 15px 0; border-left: 4px solid #0084ff; }
+    .code { font-size: 32px; font-weight: bold; color: #0084ff; letter-spacing: 5px; }
+    .refresh { color: #888; font-size: 12px; margin-top: 15px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>📱 SimFly Pakistan Bot</h1>
+    <h2>Scan QR Code with WhatsApp</h2>
+    <img src="${qrUrl}" alt="WhatsApp QR Code" width="300">
+    <div class="steps">
+      <ol>
+        <li>Open <b>WhatsApp</b> on your phone</li>
+        <li>Go to <b>Settings → Linked Devices</b></li>
+        <li>Tap <b>Link a Device</b></li>
+        <li>Point camera at the QR code above</li>
+      </ol>
+    </div>
+    <p class="refresh">QR refreshes every 30 seconds. Keep this page open.</p>
+  </div>
+</body>
+</html>`);
+      } else {
+        res.writeHead(200, { 'Content-Type': 'text/html' });
+        res.end('<h1>Waiting for QR code...</h1><p>Please wait, the bot is starting...</p>');
+      }
+    } else {
+      res.writeHead(404);
+      res.end('Not found');
+    }
+  });
+
+  server.listen(0, '0.0.0.0', () => {
+    serverPort = server.address().port;
+    console.log('');
+    console.log('🌐 QR Code Web Server started!');
+    console.log('   Open in browser: http://YOUR_VPS_IP:' + serverPort);
+    console.log('   (Replace YOUR_VPS_IP with your actual server IP)');
+    console.log('');
+  });
+}
+
+// ============================
+// 4. PHONE NUMBER INPUT
+// ============================
 function askPhoneNumber() {
   return new Promise((resolve) => {
-    logger.info('');
-    logger.info('========================================');
-    logger.info('   SimFly Pakistan WhatsApp Bot');
-    logger.info('========================================');
-    logger.info('');
-    logger.info('📱 Enter your WhatsApp bot number');
-    logger.info('   Format: 923001234567 (with country code, no +)');
-    logger.info('   Supports all 200+ countries');
-    logger.info('');
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout
+    });
 
-    rl.question('Enter number: ', (input) => {
-      const clean = input.replace(/\D/g, ''); // Remove all non-digits
+    console.log('');
+    console.log('========================================');
+    console.log('   SimFly Pakistan WhatsApp Bot');
+    console.log('========================================');
+    console.log('');
+    console.log('Enter your WhatsApp bot number');
+    console.log('Format: 923001234567 (country code, no +, no spaces)');
+    console.log('Examples: 923001234567 | 14155552671 | 447911123456');
+    console.log('');
+
+    rl.question('Phone number: ', (input) => {
+      rl.close();
+      const clean = input.replace(/\D/g, '');
 
       if (clean.length < 10 || clean.length > 15) {
-        logger.error('❌ Invalid number. Must be 10-15 digits with country code.');
-        logger.info('   Example: 923001234567 (Pakistan)');
-        logger.info('   Example: 14155552671 (USA)');
-        rl.close();
+        console.log('Invalid number. Must be 10-15 digits.');
         process.exit(1);
       }
 
-      logger.info(`✅ Number accepted: ${clean}`);
+      console.log('Number accepted: ' + clean);
       resolve(clean);
     });
   });
 }
 
 // ============================
-// 4. BOT CONNECTION
+// 5. BOT CONNECTION
 // ============================
 let sock = null;
 let reconnectAttempts = 0;
-const MAX_RECONNECT_ATTEMPTS = 10;
 
 async function connectBot(phoneNumber) {
   try {
     const { state, saveCreds } = await useMultiFileAuthState('./auth_info_baileys');
     const { version } = await fetchLatestBaileysVersion();
 
-    sock = makeWASocket({
+    const sockConfig = {
       version,
       logger: P({ level: 'silent' }),
       auth: {
@@ -138,33 +201,55 @@ async function connectBot(phoneNumber) {
       markOnlineOnConnect: true,
       syncFullHistory: false,
       shouldIgnoreJid: (jid) => jid && jid.endsWith('@g.us') || jid === 'status@broadcast',
-      getMessage: async () => undefined,
-      // Pairing code enabled
-      pairingCode: true,
-      phoneNumber: phoneNumber
-    });
+      getMessage: async () => undefined
+    };
+
+    // Only add pairingCode if we have a phone number AND no existing session
+    const hasSession = state.creds && state.creds.me && state.creds.me.id;
+    if (phoneNumber && !hasSession) {
+      sockConfig.pairingCode = true;
+      sockConfig.phoneNumber = phoneNumber;
+    }
+
+    sock = makeWASocket(sockConfig);
 
     sock.ev.on('creds.update', saveCreds);
 
     sock.ev.on('connection.update', async (update) => {
-      const { connection, lastDisconnect } = update;
+      const { connection, lastDisconnect, qr } = update;
 
-      // Show pairing code instantly when available
+      // Capture QR code and serve via web
+      if (qr) {
+        qrCodeData = qr;
+        console.log('');
+        console.log('📱 QR CODE GENERATED!');
+        console.log('');
+        console.log('Option 1 - Web Browser (Easiest):');
+        console.log('   http://YOUR_VPS_IP:' + serverPort);
+        console.log('');
+        console.log('Option 2 - Direct QR Link:');
+        console.log('   https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=' + encodeURIComponent(qr).substring(0, 60) + '...');
+        console.log('');
+        console.log('Option 3 - Terminal QR (if supported):');
+        try {
+          const qrcode = require('qrcode-terminal');
+          qrcode.generate(qr, { small: true });
+        } catch (e) {
+          console.log('   (qrcode-terminal not installed, use web browser)');
+        }
+        console.log('');
+      }
+
+      // Show pairing code
       if (update.pairingCode) {
-        logger.info('');
-        logger.info('========================================');
-        logger.info('🔑 YOUR PAIRING CODE');
-        logger.info('========================================');
-        logger.info('');
-        logger.info(`   ${update.pairingCode}`);
-        logger.info('');
-        logger.info('📲 How to link:');
-        logger.info('   1. Open WhatsApp on your phone');
-        logger.info('   2. Go to: Settings → Linked Devices');
-        logger.info('   3. Tap: Link with phone number');
-        logger.info('   4. Enter the code above ↑');
-        logger.info('');
-        logger.info('========================================');
+        console.log('');
+        console.log('========================================');
+        console.log('🔑 PAIRING CODE: ' + update.pairingCode);
+        console.log('========================================');
+        console.log('');
+        console.log('WhatsApp > Settings > Linked Devices > Link with phone number');
+        console.log('Enter code: ' + update.pairingCode);
+        console.log('');
       }
 
       if (connection === 'close') {
@@ -174,26 +259,28 @@ async function connectBot(phoneNumber) {
 
         const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
 
-        if (shouldReconnect && reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+        if (shouldReconnect && reconnectAttempts < 10) {
           reconnectAttempts++;
           const delay = Math.min(5000 * reconnectAttempts, 30000);
-          logger.info(`🔌 Connection closed. Reconnecting in ${delay}ms... (attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
+          console.log('Reconnecting in ' + delay + 'ms... (attempt ' + reconnectAttempts + ')');
           setTimeout(() => connectBot(phoneNumber), delay);
         } else if (statusCode === DisconnectReason.loggedOut) {
-          logger.error('🚫 Logged out. Delete ./auth_info_baileys folder and restart.');
+          console.log('Logged out. Delete auth_info_baileys and restart.');
           process.exit(1);
         } else {
-          logger.error('❌ Max reconnection attempts reached.');
+          console.log('Max reconnections reached.');
           process.exit(1);
         }
       } else if (connection === 'open') {
         reconnectAttempts = 0;
-        logger.info('');
-        logger.info('✅✅✅ SimFly Bot CONNECTED! ✅✅✅');
-        logger.info('');
-        logger.info('🤖 Bot is now live and handling messages');
-        logger.info('👨‍💼 Admin commands: /menu');
-        logger.info('');
+        qrCodeData = null; // Clear QR after connection
+        console.log('');
+        console.log('========================================');
+        console.log('✅ SimFly Bot CONNECTED!');
+        console.log('========================================');
+        console.log('');
+        console.log('Bot is live. Admin commands: /menu');
+        console.log('');
       }
     });
 
@@ -206,7 +293,7 @@ async function connectBot(phoneNumber) {
           if (!jid || jid.endsWith('@g.us') || jid === 'status@broadcast') continue;
           await handleMessage(msg, sock);
         } catch (err) {
-          logger.error('[MESSAGE ERROR]', err);
+          logger.error('MESSAGE ERROR', err);
         }
       }
     });
@@ -217,42 +304,49 @@ async function connectBot(phoneNumber) {
           try {
             await sock.rejectCall(call.id, call.from);
             await sock.sendMessage(call.from, { 
-              text: '❌ Calls are not supported. Please send a text message for instant support.' 
+              text: 'Calls not supported. Send text message.' 
             });
           } catch (e) {}
         }
       }
     });
 
-    sock.ev.on('error', (err) => {
-      logger.error('[SOCKET ERROR]', err);
-    });
-
   } catch (err) {
-    logger.error('[FATAL CONNECT ERROR]', err);
+    console.error('FATAL ERROR:', err.message);
     setTimeout(() => connectBot(phoneNumber), 10000);
   }
 }
 
 // ============================
-// 5. STARTUP
+// 6. STARTUP
 // ============================
 (async () => {
   try {
-    const phoneNumber = await askPhoneNumber();
-    rl.close();
+    // Start QR web server first
+    startQRServer();
+
+    // Check if already has session
+    const authExists = fs.existsSync('./auth_info_baileys/creds.json');
+    let phoneNumber = null;
+
+    if (!authExists) {
+      phoneNumber = await askPhoneNumber();
+    } else {
+      console.log('Session found. Connecting without phone number input...');
+    }
+
     await connectBot(phoneNumber);
   } catch (err) {
-    logger.error('[STARTUP ERROR]', err);
+    console.error('STARTUP ERROR:', err);
     process.exit(1);
   }
 })();
 
 process.on('SIGINT', () => {
-  logger.info('🛑 Shutting down SimFly Bot...');
+  console.log('Shutting down...');
   process.exit(0);
 });
 
 process.on('unhandledRejection', (err) => {
-  logger.error('[UNHANDLED REJECTION]', err);
+  console.error('UNHANDLED:', err);
 });
