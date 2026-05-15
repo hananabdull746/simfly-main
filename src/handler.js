@@ -10,112 +10,19 @@ const logger = require('pino')({ level: 'info' });
 // In-memory state for Eskimo account collection flow
 const eskimoState = {};
 
-const WELCOME_TEXT = `👋 *Welcome to SimFly Pakistan!*
+const WELCOME_TEXT = '👋 *Welcome to SimFly Pakistan!*\n\n🌍 International eSIM Packages\n📱 Non-PTA iPhone Specialists\n💰 JazzCash & Easypaisa Accepted\n\n*Quick Commands:*\n• *BUY 4GB QR* — 4GB eSIM (₨800)\n• *BUY 8GB QR* — 8GB eSIM (₨1500)\n• *COURSES* — 1000+ PDF (₨999)\n• *ESKIMO* — Account Transfer / Top-up\n• *PRICE* — View all pricing\n• Send payment screenshot after transfer\n\n*' + BUSINESS.brand + '* 🇵🇰 | ' + BUSINESS.location;
 
-🌍 International eSIM Packages
-📱 Non-PTA iPhone Specialists
-💰 JazzCash & Easypaisa Accepted
+const WELCOME_URDU = '👋 *SimFly Pakistan mein khush amdeed!*\n\n🌍 International eSIM Packages\n📱 Non-PTA iPhone ke liye best\n💰 JazzCash & Easypaisa\n\n*Jaldi Commands:*\n• *BUY 4GB QR* — 4GB eSIM (₨800)\n• *BUY 8GB QR* — 8GB eSIM (₨1500)\n• *COURSES* — 1000+ PDF (₨999)\n• *ESKIMO* — Account Transfer / Top-up\n• *PRICE* — Sab prices dekho\n• Payment screenshot bhejo transfer ke baad\n\n*' + BUSINESS.brand + '* 🇵🇰 | ' + BUSINESS.location;
 
-*Quick Commands:*
-• *BUY 4GB QR* — 4GB eSIM (₨800)
-• *BUY 8GB QR* — 8GB eSIM (₨1500)
-• *COURSES* — 1000+ PDF (₨999)
-• *ESKIMO* — Account Transfer / Top-up
-• *PRICE* — View all pricing
-• Send payment screenshot after transfer
+const PRICE_TEXT = '💰 *SimFly Pakistan Pricing*\n\n🌐 *Internet Data:*\n220 PKR per GB\nFormula: GB × 220\n\n📲 *QR Packages:*\n• 4GB = 800 PKR\n• 8GB = 1500 PKR\n\n📘 *Digital Product:*\n1000+ Courses PDF = 999 PKR\n\n📱 *Eskimo Account Transfer:*\nTop-up / GB transfer service\n(Admin will guide you)\n\n💳 *Payments:* JazzCash & Easypaisa\n⚡ *Delivery:* Instant after verification\n\nTo order, just send *BUY* or the package name!';
 
-*${BUSINESS.brand}* 🇵🇰 | ${BUSINESS.location}`;
+const PRICE_URDU = '💰 *SimFly Pakistan Prices*\n\n🌐 *Internet Data:*\n220 PKR per GB\nFormula: GB × 220\n\n📲 *QR Packages:*\n• 4GB = 800 PKR\n• 8GB = 1500 PKR\n\n📘 *Digital Product:*\n1000+ Courses PDF = 999 PKR\n\n📱 *Eskimo Account Transfer:*\nTop-up / GB transfer\n(Admin guide karega)\n\n💳 *Payments:* JazzCash & Easypaisa\n⚡ *Delivery:* Payment verify hone ke baad foran\n\nOrder karna hai? *BUY* likho ya package ka naam!';
 
-const WELCOME_URDU = `👋 *SimFly Pakistan mein khush amdeed!*
+const ESKIMO_NO_ACCOUNT_TEXT = '📱 *Aapke paas Eskimo account nahi hai?*\n\nNo problem! Pehle free trial le lo:\n\n1️⃣ *App Download karo:*\n' + BUSINESS.eskimoAppStore + '\n\n2️⃣ *Gift Code lagao:*\n' + BUSINESS.eskimoGiftCode + '\n\n3️⃣ *Account bana lo* apne phone number se\n\n4️⃣ *Phir yahan aao* aur apna:\n   • Phone Number\n   • Account Name\n   bhejo. Admin transfer kar dega!';
 
-🌍 International eSIM Packages
-📱 Non-PTA iPhone ke liye best
-💰 JazzCash & Easypaisa
+const ESKIMO_COLLECT_PHONE = '📱 *Eskimo Account Transfer*\n\nAapka Eskimo account number (phone number) batao:\n\nFormat: *03XXXXXXXXX* ya *923XXXXXXXXX*\n\nExample: 03001234567';
 
-*Jaldi Commands:*
-• *BUY 4GB QR* — 4GB eSIM (₨800)
-• *BUY 8GB QR* — 8GB eSIM (₨1500)
-• *COURSES* — 1000+ PDF (₨999)
-• *ESKIMO* — Account Transfer / Top-up
-• *PRICE* — Sab prices dekho
-• Payment screenshot bhejo transfer ke baad
-
-*${BUSINESS.brand}* 🇵🇰 | ${BUSINESS.location}`;
-
-const PRICE_TEXT = `💰 *SimFly Pakistan Pricing*
-
-🌐 *Internet Data:*
-220 PKR per GB
-Formula: GB × 220
-
-📲 *QR Packages:*
-• 4GB = 800 PKR
-• 8GB = 1500 PKR
-
-📘 *Digital Product:*
-1000+ Courses PDF = 999 PKR
-
-📱 *Eskimo Account Transfer:*
-Top-up / GB transfer service
-(Admin will guide you)
-
-💳 *Payments:* JazzCash & Easypaisa
-⚡ *Delivery:* Instant after verification
-
-To order, just send *BUY* or the package name!`;
-
-const PRICE_URDU = `💰 *SimFly Pakistan Prices*
-
-🌐 *Internet Data:*
-220 PKR per GB
-Formula: GB × 220
-
-📲 *QR Packages:*
-• 4GB = 800 PKR
-• 8GB = 1500 PKR
-
-📘 *Digital Product:*
-1000+ Courses PDF = 999 PKR
-
-📱 *Eskimo Account Transfer:*
-Top-up / GB transfer
-(Admin guide karega)
-
-💳 *Payments:* JazzCash & Easypaisa
-⚡ *Delivery:* Payment verify hone ke baad foran
-
-Order karna hai? *BUY* likho ya package ka naam!`;
-
-const ESKIMO_NO_ACCOUNT_TEXT = `📱 *Aapke paas Eskimo account nahi hai?*
-
-No problem! Pehle free trial le lo:
-
-1️⃣ *App Download karo:*
-${BUSINESS.eskimoAppStore}
-
-2️⃣ *Gift Code lagao:*
-\u0060FREE500MB\u0060
-
-3️⃣ *Account bana lo* apne phone number se
-
-4️⃣ *Phir yahan aao* aur apna:
-   • Phone Number
-   • Account Name
-   bhejo. Admin transfer kar dega!`;
-
-const ESKIMO_COLLECT_PHONE = `📱 *Eskimo Account Transfer*
-
-Aapka Eskimo account number (phone number) batao:
-
-Format: *03XXXXXXXXX* ya *923XXXXXXXXX*
-
-Example: 03001234567`;
-
-const ESKIMO_COLLECT_NAME = `👤 *Account Name batao*
-
-Aapka Eskimo account pe kya naam likha hai?
-
-Example: Ali Khan`;
+const ESKIMO_COLLECT_NAME = '👤 *Account Name batao*\n\nAapka Eskimo account pe kya naam likha hai?\n\nExample: Ali Khan';
 
 const handleMessage = async (msg, sock) => {
   try {
@@ -162,9 +69,7 @@ const handleMessage = async (msg, sock) => {
       const spamCheck = antiSpamCheck(jid);
       if (spamCheck.blocked) {
         await sock.sendMessage(jid, {
-          text: '⏳ *Slow down!* Bohat zyada messages bhej rahe ho. Please wait *' + RATE_LIMIT.blockMinutes + ' minutes* before messaging again.
-
-Ye spam rokne ke liye hai.'
+          text: '⏳ *Slow down!* Bohat zyada messages bhej rahe ho. Please wait *' + RATE_LIMIT.blockMinutes + ' minutes* before messaging again.\n\nYe spam rokne ke liye hai.'
         });
         return;
       }
@@ -189,7 +94,6 @@ Ye spam rokne ke liye hai.'
       const name = extractAccountName(text) || text.trim();
       const phone = eskimoState[jid].phone;
 
-      // Save to Firebase
       await saveEskimoAccount(jid, {
         phone: phone,
         accountName: name,
@@ -200,23 +104,11 @@ Ye spam rokne ke liye hai.'
       delete eskimoState[jid];
 
       await sock.sendMessage(jid, {
-        text: '✅ *Eskimo Account Details Saved!*
-
-📱 Phone: ' + phone + '
-👤 Name: ' + name + '
-
-⏳ Admin will verify and process your transfer shortly.
-
-Aapko confirmation message aa jayega.'
+        text: '✅ *Eskimo Account Details Saved!*\n\n📱 Phone: ' + phone + '\n👤 Name: ' + name + '\n\n⏳ Admin will verify and process your transfer shortly.\n\nAapko confirmation message aa jayega.'
       });
 
       await forwardToAdmin(
-        'ESKIMO ACCOUNT DETAILS
-👤 ' + jid + '
-📱 Phone: ' + phone + '
-👤 Name: ' + name + '
-
-Verify and process transfer.',
+        'ESKIMO ACCOUNT DETAILS\n👤 ' + jid + '\n📱 Phone: ' + phone + '\n👤 Name: ' + name + '\n\nVerify and process transfer.',
         sock,
         { type: 'eskimo_account', userJid: jid }
       );
@@ -228,9 +120,7 @@ Verify and process transfer.',
     // ============================
     if (isPaymentProof(msg, text)) {
       await sock.sendMessage(jid, {
-        text: '⏳ *Payment verify ho rahi hai...*
-
-🤖 AI aapka screenshot scan kar raha hai. Please wait 5-10 seconds.'
+        text: '⏳ *Payment verify ho rahi hai...*\n\n🤖 AI aapka screenshot scan kar raha hai. Please wait 5-10 seconds.'
       });
 
       let verification = { status: 'rejected', amount: 0, reason: 'No image attached', gateway: 'unknown' };
@@ -297,12 +187,7 @@ Verify and process transfer.',
           });
 
           await sock.sendMessage(jid, {
-            text: '✅ *Payment Verified: ' + formatPKR(verification.amount) + '*
-
-🤖 AI matched to *' + product.name + '*
-🆔 Order: *' + order.id + '*
-
-📦 Auto-delivering now...'
+            text: '✅ *Payment Verified: ' + formatPKR(verification.amount) + '*\n\n🤖 AI matched to *' + product.name + '*\n🆔 Order: *' + order.id + '*\n\n📦 Auto-delivering now...'
           });
 
           await deliverProduct(order, sock);
@@ -314,11 +199,7 @@ Verify and process transfer.',
           );
         } else {
           await sock.sendMessage(jid, {
-            text: '✅ *Payment of ' + formatPKR(verification.amount) + ' verified!*
-
-⚠️ Lekin amount kisi standard package se match nahi kar raha. Admin review karega aur 15 minutes mein deliver karega.
-
-🆔 Payment ID: *' + paymentId + '*'
+            text: '✅ *Payment of ' + formatPKR(verification.amount) + ' verified!*\n\n⚠️ Lekin amount kisi standard package se match nahi kar raha. Admin review karega aur 15 minutes mein deliver karega.\n\n🆔 Payment ID: *' + paymentId + '*'
           });
           await forwardToAdmin(
             'Payment verified but NO AUTO-MATCH\n💰 ' + formatPKR(verification.amount) + '\n🆔 Payment: ' + paymentId + '\n📝 ' + text,
@@ -328,17 +209,7 @@ Verify and process transfer.',
         }
       } else {
         await sock.sendMessage(jid, {
-          text: '❌ *Payment Verification Failed*
-
-*Reason:* ' + verification.reason + '
-
-Please ensure your screenshot shows:
-✅ JazzCash ya Easypaisa receipt
-✅ Paid amount clearly
-✅ SUCCESS / COMPLETED status
-✅ Transaction ID
-
-Phir se screenshot bhejo. Ya admin se contact karo.'
+          text: '❌ *Payment Verification Failed*\n\n*Reason:* ' + verification.reason + '\n\nPlease ensure your screenshot shows:\n✅ JazzCash ya Easypaisa receipt\n✅ Paid amount clearly\n✅ SUCCESS / COMPLETED status\n✅ Transaction ID\n\nPhir se screenshot bhejo. Ya admin se contact karo.'
         });
 
         await forwardToAdmin(
@@ -357,7 +228,6 @@ Phir se screenshot bhejo. Ya admin se contact karo.'
       const existingEskimo = await getEskimoAccount(jid);
 
       if (existingEskimo && existingEskimo.phone && existingEskimo.accountName) {
-        // Already has account on file
         const order = await createOrder({
           userJid: jid,
           productKey: 'ESKIMO',
@@ -373,18 +243,7 @@ Phir se screenshot bhejo. Ya admin se contact karo.'
         resetSpam(jid);
 
         await sock.sendMessage(jid, {
-          text: '📱 *Eskimo Transfer Request*
-
-Aapka saved account:
-📱 ' + existingEskimo.phone + '
-👤 ' + existingEskimo.accountName + '
-
-🆔 Order ID: *' + order.id + '*
-
-💰 *Payment bhejo:*
-JazzCash ya Easypaisa se payment karo, aur screenshot yahan bhejo.
-
-Admin verify karke transfer kar dega.'
+          text: '📱 *Eskimo Transfer Request*\n\nAapka saved account:\n📱 ' + existingEskimo.phone + '\n👤 ' + existingEskimo.accountName + '\n\n🆔 Order ID: *' + order.id + '*\n\n💰 *Payment bhejo:*\nJazzCash ya Easypaisa se payment karo, aur screenshot yahan bhejo.\n\nAdmin verify karke transfer kar dega.'
         });
 
         await forwardToAdmin(
@@ -393,9 +252,7 @@ Admin verify karke transfer kar dega.'
           { type: 'eskimo_transfer', userJid: jid }
         );
       } else {
-        // New Eskimo user — start collection flow
         eskimoState[jid] = 'awaiting_phone';
-
         await sock.sendMessage(jid, { text: ESKIMO_NO_ACCOUNT_TEXT });
         await new Promise(r => setTimeout(r, 1500));
         await sock.sendMessage(jid, { text: ESKIMO_COLLECT_PHONE });
@@ -423,23 +280,10 @@ Admin verify karke transfer kar dega.'
 
       resetSpam(jid);
 
-      let orderMsg = '🛒 *Order Created Successfully!*
-
-📦 *' + product.name + '*
-';
-      if (product.unit) orderMsg += '🔢 Quantity: ' + orderReq.qty + ' ' + product.unit + '
-';
-      else orderMsg += '🔢 Quantity: ' + orderReq.qty + '
-';
-      orderMsg += '💰 *Total: ' + formatPKR(total) + '*
-🆔 Order ID: *' + order.id + '*
-
-📲 *Next Step:*
-Send *' + formatPKR(total) + '* via JazzCash or Easypaisa to our account, then send the payment screenshot here.
-
-⚡ Delivery is instant after verification!
-
-*' + BUSINESS.brand + '* 🇵🇰';
+      let orderMsg = '🛒 *Order Created Successfully!*\n\n📦 *' + product.name + '*\n';
+      if (product.unit) orderMsg += '🔢 Quantity: ' + orderReq.qty + ' ' + product.unit + '\n';
+      else orderMsg += '🔢 Quantity: ' + orderReq.qty + '\n';
+      orderMsg += '💰 *Total: ' + formatPKR(total) + '*\n🆔 Order ID: *' + order.id + '*\n\n📲 *Next Step:*\nSend *' + formatPKR(total) + '* via JazzCash or Easypaisa to our account, then send the payment screenshot here.\n\n⚡ Delivery is instant after verification!\n\n*' + BUSINESS.brand + '* 🇵🇰';
 
       await sock.sendMessage(jid, { text: orderMsg });
 
@@ -456,11 +300,7 @@ Send *' + formatPKR(total) + '* via JazzCash or Easypaisa to our account, then s
     // ============================
     if (/(transfer|migrate|move|shift|port)/.test(lower) && /(gb|data|esim|qr)/.test(lower)) {
       await sock.sendMessage(jid, {
-        text: '📡 *GB Transfer / Migration Request Received*
-
-Aapki request admin ko forward kar di gayi hai. Ye manual process hai.
-
-⏳ Expected response: 10-30 minutes'
+        text: '📡 *GB Transfer / Migration Request Received*\n\nAapki request admin ko forward kar di gayi hai. Ye manual process hai.\n\n⏳ Expected response: 10-30 minutes'
       });
       await forwardToAdmin(
         'GB TRANSFER REQUEST\n👤 ' + jid + '\n📝 ' + text,

@@ -18,118 +18,43 @@ const deliverProduct = async (order, sock) => {
   });
 
   await sock.sendMessage(userJid, {
-    text: '✅ *Payment Verified Successfully*
-
-📦 Preparing your SimFly package...
-📲 Sending now...
-
-_Please wait..._'
+    text: '✅ *Payment Verified Successfully*\n\n📦 Preparing your SimFly package...\n📲 Sending now...\n\n_Please wait..._'
   });
 
   await new Promise(r => setTimeout(r, 2000));
 
   try {
-    // ================= QR PACKAGES (MANUAL) =================
     if (product.type === 'qr') {
       await sock.sendMessage(userJid, {
-        text: '✅ *Order Confirmed: ' + product.name + '*
-
-💰 Paid: ₨' + product.price + '
-📦 Package: ' + product.size + '
-⏳ Validity: ' + product.validity + '
-
-⚠️ *Admin will send your QR code shortly.*
-
-🆔 Order ID: *' + id + '*
-
-Please save this ID for reference.'
+        text: '✅ *Order Confirmed: ' + product.name + '*\n\n💰 Paid: ₨' + product.price + '\n📦 Package: ' + product.size + '\n⏳ Validity: ' + product.validity + '\n\n⚠️ *Admin will send your QR code shortly.*\n\n🆔 Order ID: *' + id + '*\n\nPlease save this ID for reference.'
       });
-    }
-
-    // ================= DIGITAL COURSES =================
-    else if (product.type === 'digital') {
+    } else if (product.type === 'digital') {
       if (product.driveUrl) {
         await sock.sendMessage(userJid, {
           document: { url: product.driveUrl },
           mimetype: 'application/pdf',
           fileName: 'SimFly_1000+_Courses_Premium.pdf',
-          caption: '🎓 *Your Digital Courses Package*
-
-📚 1000+ Premium Courses Collection
-💾 Tap above to download PDF
-🖥️ Compatible with all devices
-
-⭐ *Thank you for choosing ' + BUSINESS.brand + '!*
-
-For more products, just send *BUY*.'
+          caption: '🎓 *Your Digital Courses Package*\n\n📚 1000+ Premium Courses Collection\n💾 Tap above to download PDF\n🖥️ Compatible with all devices\n\n⭐ *Thank you for choosing ' + BUSINESS.brand + '!*\n\nFor more products, just send *BUY*.'
         });
       } else {
         await sock.sendMessage(userJid, {
-          text: '🎓 *Digital Courses Package*
-
-Your purchase is confirmed!
-
-📥 Download Link: *Coming from admin shortly*
-🆔 Order: *' + id + '*
-
-Admin has been notified to send your PDF.'
+          text: '🎓 *Digital Courses Package*\n\nYour purchase is confirmed!\n\n📥 Download Link: *Coming from admin shortly*\n🆔 Order: *' + id + '*\n\nAdmin has been notified to send your PDF.'
         });
       }
-    }
-
-    // ================= INTERNET DATA =================
-    else if (product.type === 'internet') {
+    } else if (product.type === 'internet') {
       const totalPrice = product.price * qty;
       await sock.sendMessage(userJid, {
-        text: '🌐 *Internet Package Activated*
-
-📦 ' + product.name + '
-🔢 Quantity: ' + qty + ' GB
-💰 Total Paid: ₨' + totalPrice + '
-⏳ Validity: As per selected plan
-
-📱 *Setup Instructions:*
-1. You will receive eSIM profile via QR shortly
-2. Or use manual activation code sent by admin
-3. Ensure your device supports eSIM
-
-⚡ *Best for Non-PTA iPhones* - Works instantly!
-
-*' + BUSINESS.brand + '* 🇵🇰'
+        text: '🌐 *Internet Package Activated*\n\n📦 ' + product.name + '\n🔢 Quantity: ' + qty + ' GB\n💰 Total Paid: ₨' + totalPrice + '\n⏳ Validity: As per selected plan\n\n📱 *Setup Instructions:*\n1. You will receive eSIM profile via QR shortly\n2. Or use manual activation code sent by admin\n3. Ensure your device supports eSIM\n\n⚡ *Best for Non-PTA iPhones* - Works instantly!\n\n*' + BUSINESS.brand + '* 🇵🇰'
       });
-    }
-
-    // ================= ESKIMO ACCOUNT TRANSFER =================
-    else if (product.type === 'eskimo') {
+    } else if (product.type === 'eskimo') {
       await sock.sendMessage(userJid, {
-        text: '✅ *Eskimo Account Transfer Confirmed*
-
-📱 Admin will process your Eskimo top-up/transfer shortly.
-
-🆔 Order ID: *' + id + '*
-
-⏳ Expected time: 10-30 minutes
-
-Please keep your Eskimo app ready.'
+        text: '✅ *Eskimo Account Transfer Confirmed*\n\n📱 Admin will process your Eskimo top-up/transfer shortly.\n\n🆔 Order ID: *' + id + '*\n\n⏳ Expected time: 10-30 minutes\n\nPlease keep your Eskimo app ready.'
       });
     }
 
-    // Final confirmation
     await new Promise(r => setTimeout(r, 1500));
     await sock.sendMessage(userJid, {
-      text: '⭐ *Delivery Status Updated!*
-
-🆔 Order ID: *' + id + '*
-📦 Product: ' + product.name + '
-
-📌 *Save this message for your records.*
-
-For renewals: Send *RENEW*
-New order: Send *BUY*
-Support: Reply here anytime
-
-👨‍💼 ' + BUSINESS.owner + '
-*' + BUSINESS.brand + '* 🇵🇰'
+      text: '⭐ *Delivery Status Updated!*\n\n🆔 Order ID: *' + id + '*\n📦 Product: ' + product.name + '\n\n📌 *Save this message for your records.*\n\nFor renewals: Send *RENEW*\nNew order: Send *BUY*\nSupport: Reply here anytime\n\n👨‍💼 ' + BUSINESS.owner + '\n*' + BUSINESS.brand + '* 🇵🇰'
     });
 
     await updateOrder(id, { status: 'delivered' });
@@ -137,9 +62,7 @@ Support: Reply here anytime
   } catch (deliveryErr) {
     console.error('[DELIVERY ERROR]', deliveryErr);
     await sock.sendMessage(userJid, {
-      text: '⚠️ There was an issue delivering your product. Admin has been notified and will send it manually.
-
-🆔 Order: *' + id + '*'
+      text: '⚠️ There was an issue delivering your product. Admin has been notified and will send it manually.\n\n🆔 Order: *' + id + '*'
     });
     await updateOrder(id, { status: 'delivery_failed', error: deliveryErr.message });
   }
